@@ -1,57 +1,54 @@
-// --- 1. 載入套件 ---
+// 引用 express 和 mysql2
 const express = require('express');
 const mysql = require('mysql2');
-const path = require('path'); // (新) 載入 path 模組
-const dbConfig = require('./db-config');
-// --- 2. 建立 Express 應用程式和連線 ---
-const app = express();
-const port = 3000;
-const connection = mysql.createConnection(dbConfig);
-// const connection = mysql.createPool(dbConfig); // 建議改用 createPool 比較穩定
+const path = require('path');  // <--- 新增這行
 
-// --- 3. 設定 Express 中介軟體 (Middleware) ---
-// (A) 為了能解析 <form> POST 過來的資料
-app.use(express.urlencoded({ extended: true }));
-// (B) (新！) 告訴 Express 去 "public" 資料夾中提供「靜態檔案」
-// 這是讓瀏覽器能存取 index.html 的關鍵
-// 當使用者造訪 http://localhost:3000/
-// Express 會自動去 public 資料夾裡找 index.html 並回傳
-app.use(express.static(path.join(__dirname, 'public')));
-// --- 4. 建立 API 路由 (Routes) ---
-// 路由 A：GET /api/messages (新 API)
-// 目標：從資料庫讀取資料，並回傳「JSON」格式
-app.get('/api/messages', (req, res) => {
-  const sql = "SELECT * FROM messages ORDER BY created_at DESC"; 
-  connection.query(sql, (err, results) => {
-    if (err) {
-      console.error('讀取資料時發生錯誤:', err);
-      // 回傳 500 錯誤和 JSON 訊息
-      res.status(500).json({ error: '伺服器錯誤' });
-      return;
-    }
-    // 成功：回傳 200 狀態碼和 "JSON 格式" 的 results
-    res.status(200).json(results);
-  });
+// --- 建立 Express 應用程式 ---
+const app = express();
+const port = 3000; // 您的 Node.js 伺服器將運行的通訊埠
+
+// 建立連線池 (Pool)，效能比單一連線更好
+const pool = mysql.createPool({
+  host: '10.232.73.222',   // 您的伺服器 IP 位址
+  port: 8878,              // MySQL 預設連接埠
+  user: 'std_1',       // 學生的帳號
+  password: 'pwd@BDstd',    // 學生的密碼
+  database: 'std_1',// 學生的資料庫名稱
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+}).promise(); // 加上 .promise() 讓我們可以使用 async/await
+
+// --- 建立一個 API 路由 (Route) ---
+// 我們建立一個 http://localhost:3000/get_all_students 的 API
+app.get('/get_all_students', async (req, res) => {
+ 
+  console.log("收到 /get_all_students 的請求...");
+
+  try {
+    // 1. 從連線池取得一個連線
+    // 2. 執行 SQL 查詢 (SELECT * FROM std)
+    // 3. 取得查詢結果 [rows]
+    const [rows] = await pool.query("SELECT * FROM std");
+
+    // 4. 將查詢結果 (這4筆資料) 以 JSON 格式回傳
+    console.log("查詢成功:", rows);
+    res.json(rows);
+
+  } catch (err) {
+    // 如果發生錯誤
+    console.error('資料庫查詢失敗:', err);
+    res.status(500).json({ error: '查詢失敗' });
+  }
 });
-// 路由 B：POST /add-message (接收表單資料)
-app.post('/add-message', (req, res) => {
-  const username = req.body.username_field;
-  const content = req.body.content_field;
-  const sql = "INSERT INTO messages (username, content) VALUES (?, ?)";
-  const values = [username, content];
-  connection.query(sql, values, (err, results) => {
-    if (err) {
-      console.error('新增資料時發生錯誤:', err);
-      res.status(500).send('伺服器錯誤'); 
-      return;
-    }   
-    console.log('一則新留言已新增，ID:', results.insertId);
-    // 新增成功後，導回首頁 (/)
-    // 瀏覽器會重新載入 index.html，並觸發 <script> 重新載入資料
-    res.redirect('/');
-  });
+app.get('/students', (req, res) => {
+  res.sendFile(path.join(__dirname, 'students.html'));
 });
-// --- 5. 啟動伺服器 ---
+// --- 啟動 Express 伺服器 ---
 app.listen(port, () => {
-  console.log(`伺服器已啟動，請在瀏覽器開啟 http://localhost:${port}`);
+  console.log(`Node.js 伺服器已啟動，正在監聽 http://localhost:${port}`);
+  console.log('---');
+  console.log('請在您的瀏覽器中開啟:');
+  console.log(`http://localhost:${port}/get_all_students`);
+  console.log('---');
 });
